@@ -2,6 +2,7 @@ import argparse
 import os
 import os.path as osp
 import time
+import json
 import cv2
 import torch
 
@@ -308,6 +309,15 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
         else:
             break
         frame_id += 1
+
+    # convert ndarray to list
+    d_first_and_last_position_of_people = {
+        id_: [val[0].tolist(), val[1].tolist(), val[2]]
+        for id_, val in d_first_and_last_position_of_people.items()
+    }
+    # save result to json file
+    with open(osp.join(args.output_json_dir, "location.json"), "w") as f:
+        json.dump(d_first_and_last_position_of_people, f)
 
     if args.save_result:
         res_file = osp.join(vis_folder, f"{timestamp}.txt")
