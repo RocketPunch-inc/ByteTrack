@@ -36,6 +36,13 @@ def make_parser():
         action="store_true",
         help="whether to save the inference result of image/video",
     )
+    # path to save json result
+    parser.add_argument(
+        "--output_json_dir",
+        type=str,
+        default="result",
+        help="path to save json result",
+    )
 
     # exp file
     parser.add_argument(
@@ -315,6 +322,8 @@ def main(exp, args):
 
     output_dir = osp.join(exp.output_dir, args.experiment_name)
     os.makedirs(output_dir, exist_ok=True)
+
+    os.makedirs(args.output_json_dir, exist_ok=True)
 
     vis_folder = None
     if args.save_result:
