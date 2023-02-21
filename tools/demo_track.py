@@ -233,6 +233,14 @@ def image_demo(predictor, vis_folder, current_time, args):
         logger.info(f"save results to {res_file}")
 
 
+def store_position_of_people(d_, l_ids, l_tlwhs):
+    for id_, tlwh in zip(l_ids, l_tlwhs):
+        if id_ not in d_:
+            d_[id_] = [tlwh, tlwh, 0]  # first seen
+        d_[id_][1] = tlwh  # last seen
+        d_[id_][2] += 1
+
+
 def imageflow_demo(predictor, vis_folder, current_time, args):
     cap = cv2.VideoCapture(args.path if args.demo == "video" else args.camid)
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
@@ -254,6 +262,7 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
     timer = Timer()
     frame_id = 0
     results = []
+    d_first_and_last_position_of_people = {}
     while True:
         if frame_id % 100 == 0:
             logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1. / max(1e-5, timer.average_time)))
@@ -276,6 +285,7 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
                         results.append(
                             f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
                         )
+                store_position_of_people(d_first_and_last_position_of_people, online_ids, online_tlwhs)
                 timer.toc()
                 online_im = plot_tracking(
                     img_info['raw_img'], online_tlwhs, online_ids, frame_id=frame_id + 1, fps=1. / timer.average_time
