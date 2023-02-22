@@ -2,6 +2,7 @@ import argparse
 import os
 import os.path as osp
 import time
+import json
 import cv2
 import torch
 
@@ -35,6 +36,13 @@ def make_parser():
         "--save_result",
         action="store_true",
         help="whether to save the inference result of image/video",
+    )
+    # path to save json result
+    parser.add_argument(
+        "--output_json_dir",
+        type=str,
+        default="result",
+        help="path to save json result",
     )
 
     # exp file
@@ -233,28 +241,38 @@ def image_demo(predictor, vis_folder, current_time, args):
         logger.info(f"save results to {res_file}")
 
 
+def store_position_of_people(d_, l_ids, l_tlwhs):
+    for id_, tlwh in zip(l_ids, l_tlwhs):
+        if id_ not in d_:
+            d_[id_] = [tlwh, tlwh, 0]  # first seen
+        d_[id_][1] = tlwh  # last seen
+        d_[id_][2] += 1
+
+
 def imageflow_demo(predictor, vis_folder, current_time, args):
     cap = cv2.VideoCapture(args.path if args.demo == "video" else args.camid)
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
     fps = cap.get(cv2.CAP_PROP_FPS)
     timestamp = time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-    save_folder = osp.join(vis_folder, timestamp)
-    os.makedirs(save_folder, exist_ok=True)
-    if args.demo == "video":
-        save_path = osp.join(save_folder, args.path.split("/")[-1])
-    else:
-        save_path = osp.join(save_folder, "camera.mp4")
-    logger.info(f"video save_path is {save_path}")
-    vid_writer = cv2.VideoWriter(
-        save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
-    )
+    if vis_folder:
+        save_folder = osp.join(vis_folder, timestamp)
+        os.makedirs(save_folder, exist_ok=True)
+        if args.demo == "video":
+            save_path = osp.join(save_folder, args.path.split("/")[-1])
+        else:
+            save_path = osp.join(save_folder, "camera.mp4")
+        logger.info(f"video save_path is {save_path}")
+        vid_writer = cv2.VideoWriter(
+            save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
+        )
     tracker = BYTETracker(args, frame_rate=30)
     timer = Timer()
     frame_id = 0
     results = []
+    d_first_and_last_position_of_people = {}
     while True:
-        if frame_id % 20 == 0:
+        if frame_id % 100 == 0:
             logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1. / max(1e-5, timer.average_time)))
         ret_val, frame = cap.read()
         if ret_val:
@@ -275,6 +293,7 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
                         results.append(
                             f"{frame_id},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n"
                         )
+                store_position_of_people(d_first_and_last_position_of_people, online_ids, online_tlwhs)
                 timer.toc()
                 online_im = plot_tracking(
                     img_info['raw_img'], online_tlwhs, online_ids, frame_id=frame_id + 1, fps=1. / timer.average_time
@@ -291,6 +310,15 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
             break
         frame_id += 1
 
+    # convert ndarray to list
+    d_first_and_last_position_of_people = {
+        id_: [val[0].tolist(), val[1].tolist(), val[2]]
+        for id_, val in d_first_and_last_position_of_people.items()
+    }
+    # save result to json file
+    with open(osp.join(args.output_json_dir, "location.json"), "w") as f:
+        json.dump(d_first_and_last_position_of_people, f)
+
     if args.save_result:
         res_file = osp.join(vis_folder, f"{timestamp}.txt")
         with open(res_file, 'w') as f:
@@ -305,6 +333,9 @@ def main(exp, args):
     output_dir = osp.join(exp.output_dir, args.experiment_name)
     os.makedirs(output_dir, exist_ok=True)
 
+    os.makedirs(args.output_json_dir, exist_ok=True)
+
+    vis_folder = None
     if args.save_result:
         vis_folder = osp.join(output_dir, "track_vis")
         os.makedirs(vis_folder, exist_ok=True)
